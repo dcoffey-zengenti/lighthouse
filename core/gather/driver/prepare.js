@@ -129,7 +129,22 @@ async function prepareThrottlingAndNetwork(session, settings) {
   await session.sendCommand('Network.setBlockedURLs', {urls: blockedUrls});
 
   const headers = settings.extraHeaders;
-  if (headers) await session.sendCommand('Network.setExtraHTTPHeaders', {headers});
+  if (headers) {
+    // Use the Fetch protocol to only add headers to the main document requests.
+    await session.sendCommand('Fetch.enable', {
+      patterns: [{urlPattern: '*', resourceType: 'Document', requestStage: 'Request'}],
+    });
+    session.on('Fetch.requestPaused', async event => {
+      await session.sendCommand('Fetch.continueRequest', {
+        requestId: event.requestId,
+        // Merge the extra headers with the existing headers and ensure value is a string.
+        headers: Object.entries({...event.request.headers, ...headers}).map(([name, value]) => ({
+            name,
+            value: String(value),
+          })),
+      });
+    });
+  }
 
   log.timeEnd(status);
 }
